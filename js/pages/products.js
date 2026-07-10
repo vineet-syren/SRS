@@ -50,7 +50,7 @@ window.SRS = window.SRS || {};
         }),
         grid: { left: 8, right: 14, top: 34, bottom: 4, containLabel: true },
         xAxis: SRS.theme.catAxis(top12.map(p => p.name), {
-          axisLabel: { color: t.ink3, fontSize: 11, rotate: 28, interval: 0 }
+          axisLabel: { color: t.ink3, fontSize: 11, rotate: 28, interval: 0, hideOverlap: true, width: 130, overflow: 'truncate' }
         }),
         yAxis: [
           SRS.theme.valAxis({

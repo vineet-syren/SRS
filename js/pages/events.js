@@ -77,7 +77,7 @@ window.SRS = window.SRS || {};
         grid: { left: 8, right: 14, top: 10, bottom: 48, containLabel: true },
         xAxis: SRS.theme.catAxis(months, {
           splitArea: { show: false },
-          axisLabel: { color: t.ink3, fontSize: 11, interval: 0 }
+          axisLabel: { color: t.ink3, fontSize: 11, interval: 'auto', hideOverlap: true }
         }),
         yAxis: Object.assign(SRS.theme.catAxis(plants), {
           inverse: true,
