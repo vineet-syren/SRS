@@ -21,7 +21,7 @@ window.SRS = window.SRS || {};
     copilot: 'Risk Copilot'
   };
 
-  const SUGGESTS = [
+  const DEFAULT_SUGGESTS = [
     'Top 5 high-risk suppliers',
     'Which materials can stop production in 15 days?',
     'Why is Mekong Flexible Films high risk?',
@@ -29,6 +29,12 @@ window.SRS = window.SRS || {};
     'Create mitigation plan for single-source materials',
     'Daily risk brief'
   ];
+  /* Suggestions follow the active persona so the copilot surfaces
+     the questions that matter to that profile. */
+  function suggests() {
+    const p = SRS.activePersona && SRS.activePersona();
+    return (p && p.suggests) || DEFAULT_SUGGESTS;
+  }
 
   const DIM_NAMES = { fin: 'Financial', geo: 'Geopolitical', rel: 'Reliability', qual: 'Quality', src: 'Sourcing' };
 
@@ -270,7 +276,7 @@ window.SRS = window.SRS || {};
     return {
       tag: AGENTS.copilot,
       html: `<p>I didn't catch that — here's what I'm good at:</p>
-        <ul>${SUGGESTS.map(s => `<li>${esc(s)}</li>`).join('')}</ul>
+        <ul>${suggests().map(s => `<li>${esc(s)}</li>`).join('')}</ul>
         <p>Ask in your own words or tap a suggestion below.</p>`
     };
   }
@@ -281,6 +287,16 @@ window.SRS = window.SRS || {};
     setTimeout(() => input.focus(), 260);
   }
   function close() { panel.classList.remove('open'); }
+
+  function refreshSuggests() {
+    const sug = document.getElementById('copilotSuggests');
+    sug.innerHTML = '';
+    suggests().forEach(s => {
+      const chip = SRS.ui.el(`<button class="chip">${esc(s)}</button>`);
+      chip.addEventListener('click', () => ask(s));
+      sug.appendChild(chip);
+    });
+  }
 
   function init() {
     panel = document.getElementById('copilot');
@@ -297,13 +313,8 @@ window.SRS = window.SRS || {};
       ask(text);
     });
 
-    // suggestion chips — always visible
-    const sug = document.getElementById('copilotSuggests');
-    SUGGESTS.forEach(s => {
-      const chip = SRS.ui.el(`<button class="chip">${esc(s)}</button>`);
-      chip.addEventListener('click', () => ask(s));
-      sug.appendChild(chip);
-    });
+    // suggestion chips — always visible, tuned to the active persona
+    refreshSuggests();
 
     // welcome message from live counts
     const d = D();
@@ -317,5 +328,5 @@ window.SRS = window.SRS || {};
     });
   }
 
-  SRS.copilot = { init, open, close };
+  SRS.copilot = { init, open, close, refreshSuggests };
 })();

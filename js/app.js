@@ -1,6 +1,7 @@
 /* ============================================================
    SRS · app.js
-   Router, sidebar nav, theme toggle, notifications, global search.
+   Router, sidebar nav, personas, theme toggle, notifications,
+   global search.
    Pages self-register on SRS.pages before this file runs.
    ============================================================ */
 window.SRS = window.SRS || {};
@@ -31,6 +32,67 @@ SRS.registerPage = function (key, page) { SRS.pages[key] = page; };
     { key: 'scenario', label: 'Scenario Studio' }
   ];
 
+  /* ---------------- Personas ----------------
+     Role-based profiles; switching one re-tunes the workspace:
+     visible nav features, landing page and copilot suggestions. */
+  const personaIcons = {
+    cpo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/><path d="M3 12h18"/></svg>',
+    category: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13.2 2.6H5a2 2 0 0 0-2 2v8.2a2 2 0 0 0 .6 1.4l7.8 7.8a2 2 0 0 0 2.8 0l6-6a2 2 0 0 0 0-2.8l-7.6-7.6a2 2 0 0 0-1.4-.6Z"/><circle cx="8" cy="8" r="1.3"/></svg>',
+    planner: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>',
+    analyst: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 4-4 3 3 5-6"/></svg>'
+  };
+  const personas = [
+    {
+      id: 'cpo', role: 'Chief Procurement Officer',
+      view: 'Executive exposure view', home: 'overview',
+      pages: ['overview', 'events', 'scenario'],
+      suggests: [
+        'Daily risk brief',
+        'Biggest revenue exposure right now',
+        'Top 5 high-risk suppliers',
+        'Simulate a supplier outage'
+      ]
+    },
+    {
+      id: 'category', role: 'Category Manager',
+      view: 'Sourcing & supplier actions', home: 'overview',
+      pages: ['overview', 'events', 'agents', 'suppliers', 'materials', 'scenario'],
+      suggests: [
+        'Top 5 high-risk suppliers',
+        'Why is Mekong Flexible Films high risk?',
+        'Create mitigation plan for single-source materials',
+        'Daily risk brief'
+      ]
+    },
+    {
+      id: 'planner', role: 'Supply Planner',
+      view: 'Inventory & continuity view', home: 'materials',
+      pages: ['overview', 'events', 'materials', 'products', 'scenario'],
+      suggests: [
+        'Which materials can stop production in 15 days?',
+        'Create mitigation plan for single-source materials',
+        'Simulate a supplier outage',
+        'Daily risk brief'
+      ]
+    },
+    {
+      id: 'analyst', role: 'Risk Analyst',
+      view: 'Full analytics workbench', home: 'events',
+      pages: ['overview', 'events', 'agents', 'suppliers', 'materials', 'products', 'scenario'],
+      suggests: [
+        'Top 5 high-risk suppliers',
+        'Which materials can stop production in 15 days?',
+        'Biggest revenue exposure right now',
+        'Why is Mekong Flexible Films high risk?'
+      ]
+    }
+  ];
+
+  let personaId = localStorage.getItem('srs-persona');
+  if (!personas.some(p => p.id === personaId)) personaId = 'category';
+  function activePersona() { return personas.find(p => p.id === personaId); }
+  SRS.activePersona = activePersona;
+
   let current = null;
 
   function navigate(key, opts) {
@@ -55,11 +117,15 @@ SRS.registerPage = function (key, page) { SRS.pages[key] = page; };
 
   function buildNav() {
     const nav = document.getElementById('nav');
+    const allowed = activePersona().pages;
     nav.innerHTML = '';
+    let pendingSection = null; // only emit a section header if it has visible items
     navModel.forEach(item => {
-      if (item.section) {
-        nav.appendChild(SRS.ui.el(`<div class="nav-section">${item.section}</div>`));
-        return;
+      if (item.section) { pendingSection = item.section; return; }
+      if (!allowed.includes(item.key)) return;
+      if (pendingSection) {
+        nav.appendChild(SRS.ui.el(`<div class="nav-section">${pendingSection}</div>`));
+        pendingSection = null;
       }
       const badge = item.badge ? item.badge() : 0;
       const btn = SRS.ui.el(`<button class="nav-item" data-key="${item.key}">
@@ -69,6 +135,58 @@ SRS.registerPage = function (key, page) { SRS.pages[key] = page; };
       btn.addEventListener('click', () => navigate(item.key));
       nav.appendChild(btn);
     });
+    if (current) {
+      nav.querySelectorAll('.nav-item').forEach(n =>
+        n.classList.toggle('active', n.dataset.key === current));
+    }
+  }
+
+  /* ---------------- Persona switcher ---------------- */
+  function syncPersonaUI() {
+    const p = activePersona();
+    document.getElementById('personaAvatar').innerHTML = personaIcons[p.id];
+    document.getElementById('personaName').textContent = p.role;
+    document.getElementById('personaView').textContent = p.view;
+    document.querySelectorAll('.persona-opt').forEach(o =>
+      o.classList.toggle('active', o.dataset.id === personaId));
+  }
+
+  function setPersona(id) {
+    if (id === personaId) return;
+    personaId = id;
+    localStorage.setItem('srs-persona', id);
+    const p = activePersona();
+    syncPersonaUI();
+    buildNav();
+    if (SRS.copilot && SRS.copilot.refreshSuggests) SRS.copilot.refreshSuggests();
+    navigate(p.home);
+    SRS.ui.toast('Persona switched', `Workspace tuned for ${p.role} — ${p.view.toLowerCase()}.`, 'good');
+  }
+
+  function initPersona() {
+    const wrap = document.getElementById('personaSwitch');
+    const menu = document.getElementById('personaMenu');
+    menu.innerHTML = '<div class="persona-menu-head">View as</div>';
+    personas.forEach(p => {
+      const opt = SRS.ui.el(`<button class="persona-opt" data-id="${p.id}">
+        <div class="avatar">${personaIcons[p.id]}</div>
+        <div><span class="po-name">${p.role}</span><span class="po-view">${p.view}</span></div>
+        <svg class="po-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+      </button>`);
+      opt.addEventListener('click', () => {
+        wrap.classList.remove('open');
+        setPersona(p.id);
+      });
+      menu.appendChild(opt);
+    });
+    document.getElementById('personaBtn').addEventListener('click', e => {
+      e.stopPropagation();
+      wrap.classList.toggle('open');
+    });
+    document.addEventListener('click', e => {
+      if (!wrap.contains(e.target)) wrap.classList.remove('open');
+    });
+    syncPersonaUI();
   }
 
   /* ---------------- Theme ---------------- */
@@ -172,11 +290,12 @@ SRS.registerPage = function (key, page) { SRS.pages[key] = page; };
   /* ---------------- Boot ---------------- */
   document.addEventListener('DOMContentLoaded', () => {
     initTheme();
+    initPersona();
     buildNav();
     initNotifications();
     initSearch();
     initOverlays();
     if (SRS.copilot && SRS.copilot.init) SRS.copilot.init();
-    navigate('overview');
+    navigate(activePersona().home);
   });
 })();

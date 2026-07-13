@@ -1,13 +1,14 @@
 /* ============================================================
    SRS · pages/agents.js
-   Agentic command center: the six live agents, the mitigation
-   funnel, the recommendation approval queue, program timelines
-   and the live activity feed.
+   Agentic command center — the recommendation approval queue,
+   the mitigation decision funnel, program execution timelines
+   and a live streaming agent activity feed. (Agent roster cards
+   were intentionally dropped — only operable surfaces remain.)
    ============================================================ */
 window.SRS = window.SRS || {};
 
 (function () {
-  /* ---------------- Inline SVG icon set (24×24 stroke) ---------------- */
+  /* ---------------- Inline SVG icon set (24×24 stroke) — feed dots ---------------- */
   const ICONS = {
     radar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l5.6-5.6"/><path d="M12 12h.01"/></svg>',
     target: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2"/></svg>',
@@ -17,11 +18,24 @@ window.SRS = window.SRS || {};
     branch: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2.4"/><circle cx="6" cy="19" r="2.4"/><circle cx="18" cy="7" r="2.4"/><path d="M6 7.4v9.2"/><path d="M18 9.4a9.2 9.2 0 0 1-9.3 7.3"/></svg>'
   };
 
-  /* Format one agent stat from its key + label text. */
-  function statVal(key, val, label) {
-    if (key === 'revComputed' || /\$M/.test(label)) return SRS.fmt.usdM(val);
-    if (/%/.test(label)) return val + '%';
-    return SRS.fmt.num(val);
+  /* ---------------- Streamed feed copy ---------------- */
+  const STREAM_POOL = [
+    ['sensing', 'Signal sweep: <strong>1,180 external datapoints</strong> screened — 2 qualified for triage, both below escalation threshold.'],
+    ['impact', 'Exposure refresh on <strong>EV-2617</strong>: REV steady at $14.2M; fill-rate risk unchanged across 3 regions.'],
+    ['mitigation', 'Decision memory updated — Nov 25 film-disruption outcome weighted into current <strong>R-101</strong> confidence.'],
+    ['workflow', 'ERP sync: <strong>PR-88412</strong> (resin safety stock) moved to <em>in fulfilment</em>; planner notified.'],
+    ['comms', 'Reminder queued for <strong>Chengdu Lithium Power</strong> — recovery-plan response now 2 days overdue.'],
+    ['scenario', 'Background what-if: 21-day Monterrey strike re-simulated — best plan unchanged (Pune overtime + air freight).'],
+    ['sensing', 'Port congestion index for <strong>Rotterdam</strong> ticked up 4% — below alert threshold, watching.'],
+    ['impact', 'BOM cross-check: no new single-source dependencies introduced by last night\'s engineering changes.']
+  ];
+
+  /* Synthetic feed clock, starts just after the latest data item. */
+  let clock = 6 * 60 + 44;
+  function nextTime() {
+    clock += 2 + Math.floor(Math.random() * 4);
+    const h = Math.floor(clock / 60) % 24, m = clock % 60;
+    return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
   }
 
   /* Decrement (or remove) the AI Agents sidebar badge. */
@@ -36,43 +50,49 @@ window.SRS = window.SRS || {};
     const D = SRS.data, ui = SRS.ui;
     const t = SRS.theme.tokens(); // for DOM tints at render time
 
-    /* ================= 1 · Agent grid ================= */
-    const agrid = ui.el('<div class="agent-grid"></div>');
-    D.agents.forEach((a, ai) => {
+    /* Shared feed renderer — used for the initial list and streamed items. */
+    function feedNode(f) {
+      const a = D.agents.find(x => x.key === f.agent) || D.agents[0];
       const c = t.series[a.color - 1];
-      const node = ui.el(`<div class="agent-card">
-        <div class="agent-top">
-          <span class="agent-icon" style="background:${c}22;color:${c}">${ICONS[a.icon] || ICONS.radar}</span>
-          <div>
-            <div class="agent-name">${ui.esc(a.name)}</div>
-            <div class="agent-role">Agent ${String(ai + 1).padStart(2, '0')} · autonomous · ${ui.esc(a.key)}</div>
-          </div>
-          <span class="agent-status"><span class="pulse"></span>LIVE</span>
+      return ui.el(`<div class="feed-item">
+        <span class="feed-dot" style="background:${c}22;color:${c}">${ICONS[a.icon] || ICONS.radar}</span>
+        <div class="feed-body">
+          <span class="f-agent" style="color:${c}">${ui.esc(a.name)}</span>
+          <div class="f-text">${f.text}</div>
         </div>
-        <div class="agent-desc">${ui.esc(a.role)}</div>
-        <div class="agent-stats">${
-          Object.keys(a.stats).map((k, i) => `<div class="agent-stat">
-            <div class="as-val">${statVal(k, a.stats[k], a.statLabels[i])}</div>
-            <div class="as-label">${ui.esc(a.statLabels[i])}</div>
-          </div>`).join('')
-        }</div>
+        <span class="feed-time">${ui.esc(f.time)} UTC</span>
       </div>`);
-      agrid.appendChild(node);
-    });
-    host.appendChild(agrid);
+    }
+    let feedWrap = null;
+    function pushFeed(agentKey, text) {
+      const item = { time: nextTime(), agent: agentKey, text };
+      D.feed.unshift(item);
+      if (D.feed.length > 40) D.feed.pop();
+      if (feedWrap && feedWrap.isConnected) {
+        const node = feedNode(item);
+        node.style.background = 'var(--accent-soft)';
+        feedWrap.prepend(node);
+        setTimeout(() => { node.style.transition = 'background 1.2s'; node.style.background = 'transparent'; }, 900);
+        while (feedWrap.children.length > 14) feedWrap.lastElementChild.remove();
+      }
+      return item;
+    }
 
-    const grid = ui.el('<div class="grid grid-12 mt-16"></div>');
+    const grid = ui.el('<div class="grid grid-12"></div>');
     host.appendChild(grid);
 
-    /* ================= 2 · Mitigation funnel ================= */
-    grid.appendChild(ui.el('<div class="section-title col-12">Decision pipeline</div>'));
+    /* Left column stacks the funnel + live feed so its height always
+       matches the (taller) recommendation queue — no dead space. */
+    const leftCol = ui.el('<div class="col-5" style="display:flex;flex-direction:column;gap:16px;min-height:0"></div>');
+    grid.appendChild(leftCol);
 
+    /* ================= 1 · Mitigation funnel ================= */
     const funnelCard = ui.card({
       title: 'Mitigation pipeline — FY26 YTD',
       sub: 'from raw signal to executed action',
-      cols: 5, chartClass: 'chart-lg'
+      chartClass: 'chart-lg'
     });
-    grid.appendChild(funnelCard);
+    leftCol.appendChild(funnelCard);
 
     SRS.charts.mount(funnelCard._chartEl, () => {
       const tk = SRS.theme.tokens();
@@ -82,6 +102,7 @@ window.SRS = window.SRS || {};
         itemStyle: { color: tk.seq[seqIdx[i]], borderColor: tk.surface, borderWidth: 2 }
       }));
       return Object.assign(SRS.theme.baseOption(), {
+        legend: { show: false }, // stage names live inside the funnel
         tooltip: Object.assign(SRS.theme.baseOption().tooltip, {
           trigger: 'item',
           formatter: p => {
@@ -108,23 +129,23 @@ window.SRS = window.SRS || {};
       });
     });
 
-    /* ================= 3 · Recommendation queue ================= */
+    /* ================= 2 · Recommendation queue ================= */
     const recoCard = ui.card({
       title: 'Recommendation queue',
-      sub: 'proposed by Mitigation Recommendation Agent — pending your approval',
+      sub: 'proposed by the agent network — pending your approval',
       cols: 7
     });
     grid.appendChild(recoCard);
     const recoBody = recoCard.querySelector('.card-body');
 
-    const APPROVED_TAG = '<span class="approved-tag">✓ Approved — Workflow Execution Agent is executing</span>';
+    const APPROVED_TAG = '<span class="approved-tag">✓ Approved — execution started (tickets, POs, notifications)</span>';
     const DISMISSED_TAG = '<span class="dismissed-tag">Dismissed — kept in decision memory</span>';
 
     D.recommendations.forEach((r, i) => {
       const block = ui.el(`<div class="reco${r.status !== 'pending' ? ' done' : ''}">
         <div class="reco-head">
           <span class="reco-title">${ui.esc(r.title)}</span>
-          <span class="badge accent plain" style="cursor:pointer" title="Open event">${ui.esc(r.linkedEvent)}</span>
+          ${r.linkedEvent ? `<span class="badge accent plain" style="cursor:pointer" title="Open event">${ui.esc(r.linkedEvent)}</span>` : ''}
         </div>
         <p class="muted" style="font-size:12px;line-height:1.55;margin-top:5px">${ui.esc(r.detail)}</p>
         <div class="reco-meta">
@@ -136,7 +157,8 @@ window.SRS = window.SRS || {};
         <div class="reco-actions"></div>
       </div>`);
 
-      block.querySelector('.badge').addEventListener('click', () => ui.openEvent(r.linkedEvent));
+      const evBadge = block.querySelector('.badge');
+      if (evBadge) evBadge.addEventListener('click', () => ui.openEvent(r.linkedEvent));
 
       const actions = block.querySelector('.reco-actions');
       if (r.status === 'approved') {
@@ -149,6 +171,7 @@ window.SRS = window.SRS || {};
           r.status = 'approved';
           actions.innerHTML = APPROVED_TAG;
           block.classList.add('done');
+          pushFeed('workflow', `Approval received for <strong>${r.id}</strong> — ticket PR-${88500 + i} created, supplier notified, ERP requisition triggered.`);
           ui.toast('Recommendation approved',
             'Ticket PR-' + (88500 + i) + ' created · supplier notified · ERP requisition triggered', 'good');
           decNavBadge();
@@ -174,9 +197,7 @@ window.SRS = window.SRS || {};
       recoBody.appendChild(block);
     });
 
-    /* ================= 4 · Gantt — mitigation programs ================= */
-    grid.appendChild(ui.el('<div class="section-title col-12">Execution &amp; activity</div>'));
-
+    /* ================= 3 · Gantt — mitigation programs ================= */
     const legendDot = (color, label) => ui.el(
       `<span class="flex aic" style="gap:5px;font-size:12px;color:var(--ink-3)">
         <i style="width:9px;height:9px;border-radius:3px;background:${color};display:inline-block"></i>${label}
@@ -195,7 +216,7 @@ window.SRS = window.SRS || {};
     grid.appendChild(ganttCard);
     SRS.charts.gantt(ganttCard._chartEl, D.gantt);
 
-    /* ================= 5 · Live agent activity feed ================= */
+    /* ================= 4 · Live agent activity feed ================= */
     function digestHtml() {
       const active = D.events.filter(e => ['Active', 'Tracked', 'Mitigation in Progress'].includes(e.status));
       const top2 = active.slice().sort((a, b) => b.rev - a.rev).slice(0, 2);
@@ -224,41 +245,43 @@ window.SRS = window.SRS || {};
         <p><strong>Focus for today:</strong> ${focus}</p>`;
     }
 
-    const digestBtn = ui.el('<button class="btn btn-sm btn-primary">Generate daily risk digest</button>');
+    const digestBtn = ui.el('<button class="btn btn-sm btn-primary">Daily digest</button>');
     digestBtn.addEventListener('click', () => {
       const d = new Date(D.asOf + 'T00:00:00');
       const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
       ui.modal('Daily risk digest — ' + dateStr, digestHtml());
     });
 
+    /* Fills the space under the funnel; the list scrolls inside the card
+       so the left column never outgrows the queue. */
     const feedCard = ui.card({
       title: 'Live agent activity',
-      sub: 'most recent first',
-      cols: 12,
+      sub: 'streaming · most recent first',
       actions: [digestBtn]
     });
-    grid.appendChild(feedCard);
+    feedCard.style.cssText = 'flex:1 1 0;min-height:340px';
+    leftCol.appendChild(feedCard);
 
-    const feedWrap = ui.el('<div class="feed"></div>');
-    D.feed.forEach(f => {
-      const a = D.agents.find(x => x.key === f.agent) || D.agents[0];
-      const c = t.series[a.color - 1];
-      const row = ui.el(`<div class="feed-item">
-        <span class="feed-dot" style="background:${c}22;color:${c}">${ICONS[a.icon] || ICONS.radar}</span>
-        <div class="feed-body">
-          <span class="f-agent" style="color:${c}">${ui.esc(a.name)}</span>
-          <div class="f-text">${f.text}</div>
-        </div>
-        <span class="feed-time">${ui.esc(f.time)} UTC</span>
-      </div>`);
-      feedWrap.appendChild(row);
-    });
-    feedCard.querySelector('.card-body').appendChild(feedWrap);
+    feedWrap = ui.el('<div class="feed"></div>');
+    D.feed.slice(0, 12).forEach(f => feedWrap.appendChild(feedNode(f)));
+    const feedBody = feedCard.querySelector('.card-body');
+    feedBody.style.overflowY = 'auto';
+    feedBody.appendChild(feedWrap);
+
+    /* Stream a new feed item every few seconds while the page is open;
+       the interval dies with the page. */
+    let streamIdx = 0;
+    const iv = setInterval(() => {
+      if (!host.isConnected) { clearInterval(iv); return; }
+      const [key, text] = STREAM_POOL[streamIdx % STREAM_POOL.length];
+      streamIdx++;
+      pushFeed(key, text);
+    }, 8000);
   }
 
   SRS.registerPage('agents', {
     title: 'AI Agents',
-    crumb: 'Agentic command center · 6 agents live',
+    crumb: 'Approvals, decision pipeline & live agent activity',
     render
   });
 })();
